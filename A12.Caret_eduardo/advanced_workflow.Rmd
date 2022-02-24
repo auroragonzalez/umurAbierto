@@ -1,0 +1,160 @@
+---
+title: "TallerCaret"
+output: html_document
+date: '2022-02-23'
+---
+
+```{r librarys, include=FALSE}
+library(caret)
+library(corrplot)
+library(ggplot2)
+library(eqs2lavaan)
+```
+
+## Lectura y Exploración Inicial de Ficheros
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r read}
+dataset <- read.csv('taller_caret.csv')[1:1000,c(-1,-2)]
+
+print(dataset)
+```
+
+```{r correlations, echo }
+data.frame(cov(dataset))
+corrplot(cor(dataset), method = 'number')
+```
+## Preprocesamiento
+
+You can also embed plots, for example:
+
+```{r split, echo=FALSE}
+
+y <- dataset$MortalityIncrement
+dataset <- dataset[,(1:(ncol(dataset) - 1))]
+preProcess_range_model <- preProcess(dataset, method=c('range'))
+dataset <- predict(preProcess_range_model, newdata = dataset)
+dataset$MortalityIncrement <- y
+print(dataset)
+```
+
+## Split
+
+```{r preprocess, echo=FALSE}
+set.seed(100)
+
+trainRowNumbers <- createDataPartition(dataset$MortalityIncrement, p=0.8, list=FALSE)
+trainData <- dataset[trainRowNumbers,]
+testData <- dataset[-trainRowNumbers,]
+
+X = trainData[, 1:(ncol(trainData) - 1)]
+y_train = trainData$MortalityIncrement
+y_test = testData$MortalityIncrement
+```
+## Seleccion de Variables
+
+```{r selection, echo=FALSE}
+set.seed(100)
+options(warn=-1)
+
+subsets <- c(1:5, 10, 15, 18)
+
+ctrl <- rfeControl(functions = rfFuncs,
+                   method = "repeatedcv",
+                   repeats = 5,
+                   verbose = FALSE)
+
+lmProfile <- rfe(x=trainData[1:100, 1:(ncol(trainData) - 1)], y=trainData$MortalityIncrement[1:100],
+                 sizes = subsets,
+                 rfeControl = ctrl)
+
+lmProfile
+```
+
+```{r filter, echo=FALSE}
+trainData <- trainData[lmProfile$optVariables]
+trainData$MortalityIncrement <- y_train
+print(trainData)
+```
+
+## Seleccion de Hiperparámetros
+
+```{r grid, echo=FALSE}
+fitControl <- trainControl(
+    method = 'cv',                   # k-fold cross validation
+    number = 5,                      # number of folds
+    savePredictions = 'final',       # saves predictions for optimal tuning parameter
+) 
+
+grid_rborist <-  expand.grid(predFixed = c(1,2), minNode = c(1,10,100))
+grid_svmRadial <-  expand.grid(sigma = c(1,2,5,8), C = c(0.25,0.50,1))
+grid_mlp <-  expand.grid(size = c(1,2,5,8))
+```
+## Entrenamiento del modelo
+
+```{r rboris, echo=FALSE}
+model_rborist = train(MortalityIncrement ~ ., data=trainData, method='Rborist', tuneGrid=grid_rborist, trControl = fitControl)
+model_rborist
+```
+
+```{r svm, echo=FALSE}
+model_svmRadial = train(MortalityIncrement ~ ., data=trainData, method='svmRadial', tuneGrid=grid_svmRadial, trControl = fitControl)
+model_svmRadial
+```
+
+```{r mlp, echo=FALSE}
+model_mlp = train(MortalityIncrement ~ ., data=trainData, method='mlp', tuneGrid=grid_mlp, trControl = fitControl)
+model_mlp
+```
+## Prediccion
+
+```{r prediction, echo=FALSE}
+predicted_rborist <- predict(model_rborist, testData)
+predicted_svmRadial <- predict(model_svmRadial, testData)
+predicted_mlp <- predict(model_mlp, testData)
+```
+## Evaluación
+
+```{r validation, echo=FALSE}
+models_compare <- resamples(list(RBORIST=model_rborist, SVM=model_svmRadial, MLP=model_mlp))
+summary(models_compare)
+```
+
+```{r validation, echo=FALSE}
+postResample(pred = predicted_rborist, obs = y_test)
+postResample(pred = predicted_svmRadial, obs = y_test)
+postResample(pred = predicted_mlp, obs = y_test)
+```
+
+```{r plotting, echo=FALSE}
+validation = data.frame("Observation" = c(1:length(y_test)),"PredictedRborist" = predicted_rborist, "PredictedSVM" = predicted_svmRadial, "PredictedMLP" = predicted_mlp,  "Real" = y_test)
+
+ggplot(data = validation, aes(x = Observation, y = Real)) +
+  geom_line(color = "firebrick") +
+  geom_line(aes(y = PredictedRborist), color = "blue") +
+  geom_line(aes(y = PredictedSVM), color = "green") +
+  geom_line(aes(y = PredictedMLP), color = "orange") +
+  ylab("Mortality Increment (%)")
+```
+
+```{r linear plot, echo=FALSE}
+
+ggplot(data = validation, aes(x = Real, y = PredictedRborist)) +
+  geom_point(size=2, color = "firebrick") +
+  xlab("Real Mortality Increment") +
+  ylab("Predicted Mortality Increment")
+
+ggplot(data = validation, aes(x = Real, y = PredictedSVM)) +
+  geom_point(size=2, color = "blue") +
+  xlab("Real Mortality Increment") +
+  ylab("Predicted Mortality Increment")
+
+ggplot(data = validation, aes(x = Real, y = PredictedMLP)) +
+  geom_point(size=2, color = "orange") +
+  xlab("Real Mortality Increment") +
+  ylab("Predicted Mortality Increment")
+
+```

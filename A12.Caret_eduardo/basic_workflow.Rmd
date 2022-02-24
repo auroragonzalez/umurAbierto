@@ -1,0 +1,86 @@
+---
+title: "TallerCaret"
+output: html_document
+date: '2022-02-23'
+---
+
+```{r library, include=FALSE}
+library(caret)
+library(corrplot)
+library(ggplot2)
+```
+
+## Lectura y Exploración Inicial de Ficheros
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r read}
+dataset = read.csv('taller_caret.csv')[1:1000,]
+
+print(dataset)
+```
+
+```{r correlation}
+corrplot(cor(dataset), method = 'number')
+```
+## Generación de dataset de entrenamiento y test
+
+You can also embed plots, for example:
+
+```{r split, echo=FALSE}
+
+set.seed(100)
+
+trainRowNumbers <- createDataPartition(dataset$MortalityIncrement, p=0.8, list=FALSE)
+trainData <- dataset[trainRowNumbers,]
+testData <- dataset[-trainRowNumbers,]
+
+X = trainData[, 1:8]
+y = testData$MortalityIncrement
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r print, echo=FALSE}
+print(X)
+```
+## Entrenamiento del modelo
+
+```{r training, echo=FALSE}
+model = train(MortalityIncrement ~ ., data=trainData, method='svmRadial')
+model
+```
+## Prediccion
+
+```{r prediction, echo=FALSE}
+predicted <- predict(model, testData)
+print(predicted)
+```
+## Evaluación
+
+```{r validation, echo=FALSE}
+postResample(pred = predicted, obs = y)
+cor.test(predicted, y)
+t.test(predicted, y)
+```
+
+
+```{r plotting, echo=FALSE}
+validation = data.frame("Location" = c(1:length(y)),"Predicted" = predicted, "Real" = y)
+
+ggplot(data = validation, aes(x = Location, y = Real)) +
+  geom_line(color = "firebrick") +
+  geom_line(aes(y = Predicted), color = "blue") +
+  ylab("Mortality Increment (%)")
+```
+
+```{r linear plot, echo=FALSE}
+
+ggplot(data = validation, aes(x = Real, y = Predicted)) +
+  geom_point(size=2, color = "firebrick") +
+  xlab("Real Mortality Increment") +
+  ylab("Predicted Mortality Increment")
+
+```
